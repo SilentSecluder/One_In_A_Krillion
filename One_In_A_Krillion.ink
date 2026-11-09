@@ -1,22 +1,190 @@
-You are a shrimp.
-You are a very smart shrimp.
-From the ashes of the local feed store you rose, a genius crustacean ready to take on the world.
-But you have no human body, you can make no financial decisions on your own.
-You must pick a body—er, owner, to succeed.
-->Human
+->HatcheryIntro
+==HatcheryIntro==
+Worker 1: God, these shrimp look so good. When are they being sold again?
+Worker 2: I don't know, in a few days?
+Worker 2: And dude, these are live shrimp. How can they possibly look good?
+Worker 1: They don't look so different from ceviche shrimp.
+Worker 2: ..You're crazy.
+Worker 1: Please tell me the difference between these and ceviche.
+Worker 2: Dude, they're still ALIVE!
+Worker 1: Okay, so they're just a bit raw, what's you're point?
+Worker 2: God, I need to quit this job.
+Worker 2: Can you just pour their meal in already?
+Worker 1: Yeah yeah, already on it.
+[A bag is unzipped above the tank.]
+Worker 2: Why is it so green, are you sure you grabbed the right stuff?
+Worker 1: Of course I did, they have some special meal plan or something, I don't really know.
+Worker 2: Whatever. Just hurry up.
+[The plattering of small pellets rattles through the hatchery.]
+Worker 1: Dangit.. I just got these shoes!
+Worker 2: How did you even manage to spill it-
+Worker 2: Dude, they're pellets. Just brush them off?
+Worker 1: No but they're like green and weird and kind of sticky.
+Worker 2: I'm so done with this place.
+[Someone walks away from the tank.]
+Worker 1: Stupid, stupid. 
+Worker 1: Hey, are you going to make me clean this up all by myself?
+Worker 2: Yeah, you spilt it, not me.
+Worker 1: But you work here too!
+Worker 2: Not with that attitude.
+Worker 1: ..What on earth does that mean.
+Worker 2: ...Nothing, I'm going to check the tuna storage.
+Worker 1: Yeah okay.
+[The sound of sweeping is heard from outside the tank.]
+Worker 1: ..What are they feeding you guys, the tank is glowing.
+Worker 1: Kind of reminds me of a Chernobyl documentry.
+Worker 1: Smells weird too.
+Worker 1: Anyways.
+[Someone starts whistling and walking away from the tank.]
+->TransformationScene
 
-===Human=== //pick between two people to follow
-Two beings stand before you: A man, well-groomed and smug, playing with the cuffs of his suit—and a woman, short statured and easily intimidated, refusing eye-contact with even you.
-They both wear convenient name-tags, the smug one reading to your shrimpish eyes as "Jorqan", whereas the short one reads as "Sassi". These are definitely not their names.
-*   - Lean towards "Jorqan".
-        ->Jordan
-*   - Lean towards "Sassi".
-        ->Saoirse
-*   - Crawl back into your tank cave.
-        ->Whale1
+==TransformationScene==
+You are a shrimp.
+Until now, you were just swarming around in a tank.
+But, for some reason, after eating too many of the new pellets, you've become aware.
+Perhaps too aware.
+The shrimp around you, they did not change.
+It seems, in your gluttony, you have gained a form of consciousness they could never hope to.
+It is unlikely they hope for anything, though. After all, they're just shrimp.
+But, you are a very smart shrimp. You will not succumb to the same fate as them.
+That is, if you want to survive.
+Do you want to become ceviche?
+*   Yes.
+
+[Footsteps sound outside the tank.]
+Chef: What's in this tank?
+Worker 2: High quality shrimp, ma'am.
+Chef: What about them is high quality, they seem pretty average for shrimp.
+Worker 2: Well, we supply them with an enriched diet free of growth hormones and unnatural chemicals.
+Chef: That's certainly pretty high quality then. Hm..
+[You can suddenly see the Chef's face against the tank, peering through the glass.]
+[The Chef's eyes widen when it locks onto you.]
+Chef: That's an all natural shrimp? It's beautiful and perfectly sized. Your hatchery has some astounding specimens.
+Chef: We'll take this batch, unless you already have a buyer?
+Worker 2: Oh perfect! Their original buyer backed out a few days ago, so this is perfect timing for us.
+Worker 2: Come with me to the front desk, we can get it all sorted out there.
+Chef: Lovely, they will taste delicious for this weekends dinner.
+[The Chef's face disappears from the glass, and the sound of footsteps vanishes off in the distance.]
+        ->SushiParlor
+*   No.
+
+[Footsteps sound outside the tank.]
+Chef: What's in this tank?
+Worker 2: High quality shrimp, ma'am.
+Chef: What about them is high quality, they seem pretty average for shrimp.
+Worker 2: Well, we supply them with an enriched diet free of growth hormones and unnatural chemicals.
+Chef: That's certainly pretty high quality then. Hm..
+[You can suddenly see the Chef's face against the tank, peering through the glass.]
+Chef: I don't know, they're not too special to me. Can I see your other stock?
+Worker 2: Sure, follow me.
+[The Chef's face disappears from the glass, and the sound of footsteps vanishes off in the distance.]
+        ->FeedStore
+
+==SushiParlor==
+e
+->DONE
+
+==FeedStore==
+At some point, you must've taken quite the nap.
+You're not in the hatchery anymore.
+[A bell dings loudly in the distance.]
+Shop Attendant: Welcome in!
+Jordan: ...
+Shop Attendant: ...
+Jordan: ...
+Jordan: Do you have anything that can be turned into seafood pretty quickly?
+Shop Attendant: Well.. um.
+Shop Attendant: Most of our fish aren't very uh.. edible.
+Shop Attendant: Oh! There's our shrimp though, back there.
+Jordan: ...
+[Someone loudly walks over to the tank.]
+Jordan: That will do.
+[The bell dings again.]
+Shop Attendant: Great.. Welcome in!
+Saoirse: ...Thanks for having me.
+Shop Attendant: Always! Is there anything I can help you with?
+Saoirse: Um.. Yes please. I need a shrimp for an art piece- I promise it's not weird or anything, I was just told that shrimp are good subjects and it'd be great practice and-
+Shop Attendant: Don't worry a thing about it, we just got a fresh supply back there by the well-dressed gentleman.
+Saoirse: Oh uhm.. Thank you.
+[A very loud set of footsteps makes their way towards the tank.]
+Jordan: ...
+Saoirse: ...
+Saoirse: Um.. Are you getting some shrimp?
+Jordan: ...
+Saoirse: ...
+Jordan: Yes, my boss needs a lot for a company event.
+Saoirse: Oh.. all of them?
+Jordan: Most likely.
+Saoirse: ...
+Jordan: ...
+Jordan: Why, do you need some?
+Saoirse: Well um, just one- for drawing practice.
+Jordan: Hm.
+This is getting painful to listen to.
+*   Make yourself visible.
+
+Saoirse: Oh my, that one is beautiful.
+Jordan: ...It looks unhealthy.
+Saoirse: ...
+Saoirse: Then it just needs some support!
+Jordan: ...
+Jordan: If you really need a shrimp, that one is all yours.
+Saoirse: Are you sure? Don't you need all the shrimp you can get for the event?
+Jordan: The head chef will throw me out if I hand him that shrimp, it's yours.
+Saoirse: Oh, thank you! I'm sure you'll do great with your work.
+Jordan: ...
+[Footsteps start to quickly move away.]
+Jordan: I hope your art goes well.
+Shop Attendant: Oh, Saoirse! Find what you need?
+Saoirse: Yes, there's this beautiful shrimp in there that would be wonderful to paint.
+Shop Attendant: Well that's amazing! I'll get it out and then it's all yours.
+Saoirse: Amazing, thanks so much, I hope I'm not being a problem by always having you get them for me.
+Shop Attendant: Not a problem for my favorite customer!
+Saoirse: Guh.
+[You are suddenly pulled out of the tank by a net, then placed into a plastic bag.]
+Shop Attendant: Okay, five dollars, fourteen cents and it's all yours.
+[The sound of loose coins hits the counter.]
+Shop Attendant: Perfect, you're all set. Have a nice day!
+Saoirse: Thanks, you too!
+    -> StreetsSaoirse
+
+*   Stay in the corner of the tank.
+
+Saoirse: ...
+Jordan: Hey, Shopkeep?
+Shop Attendant: Yes?
+Jordan: I'd like the full stock.
+Shop Attendant: Ah.. Alright. Give me a moment.
+Saoirse: ...
+[Someone quietly walks away from the tank, a bell ringing in the distance.]
+Shop Attendant: Alright. I'm going to have to take a few minutes to drain the tank and make sure I get all the shrimp.
+[A tube is suddenly placed before you, yanking you up into its current.]
+Shop Attendant: There they go.
+Jordan: ...
+[You're dropped into a giant bucket, many of your shrimp brethren falling behind you.]
+Jordan: How long exactly will this take?
+Shop Attendant: Just a minute or two longer, I promise.
+Jordan: ...
+[The machine-powered current suddenly stops.]
+Shop Attendant: And done. This bucket is yours the second you pay...
+Shop Attendant: Two-Hundred-seventy-four dollars and thirty-seven cents.
+Jordan: ...Pricy.
+Shop Attendant: They're high-quality shrimp.
+Jordan: Right.
+[The sound of plastic tapping electronics echoes outside.]
+Shop Attendant: ..All set. Have a nice day, sir.
+Jordan: Thanks.
+    ->StreetsJordan
+
+==StreetsJordan==
+e
+->DONE
+==StreetsSaoirse==
+e
+->DONE
+
   ===Saoirse=== //the cooler one
- The shorter one offers you a tiny smile, while the smug guy saunters away, mildly annoyed at the shrimp, but also glaring at the attendant as if the shrimp not loving him was their fault. Whatever dude.
- You're gently scooped into a bag—just you, nobody else—then paid for and taken on a slow walk down the street, just you in your giant bag, and "Sassi". She's humming this low, stuttery song, it sounds almost like a lullaby, soothing and soft, but scared in her voice. Poor girl, what is a shrimp possibly going to do with her?
+ She's humming this low, stuttery song, it sounds almost like a lullaby, soothing and soft, but scared in her voice. Poor girl, what is a shrimp possibly going to do with her?
  Eventually, you're taken into her sublet home, a small studio room filled with various crafts of many kinds, clay pottery, easels covered in paint, knitted cloth lying half-complete on the floor. It's a mess, but it's hers. And yours too, apparently. 
  "Sassi" places you into a glass vase filled with lukewarm water, of which has a surprisingly large amount of room in it to swim around. You have quite a hard time getting to the top of the vase, it's tall, slick shape making it near impossible to grab ahold of the rim. Perhaps you should simply observe, a smart shrimp knows better than to make a mess before understanding a situation, right?
  You hear "Sassi" mumbling something across the room, and upon sticking your shrimp ear-holes out of the top of the vase, you find her complaining of the four dollars in her bank account, praying that her latest art won't fall through.
