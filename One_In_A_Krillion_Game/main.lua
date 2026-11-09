@@ -1,10 +1,14 @@
--- One In A Krillion : a small visual novel game for LOVE2D engine (11.x / 12.x)
+-- One In A Krillion : a small visual novel engine for LOVE2D (11.x / 12.x)
 --
 -- Controls
+--   Start menu             : click a button, or Up / Down + Enter
 --   Click / Space / Enter : advance text (first press finishes the typewriter)
 --   Up / Down + Enter      : choose an option   (or click it, or press 1-9)
---   R                      : restart (on an ending screen)
---   Esc                    : quit
+--   R                      : play again (on an ending screen)
+--   Esc                    : in the story: pause (zoom into the shrimp's eye) / resume;
+--                            in Settings: back to the pause menu;
+--                            in Endings / Credits: back to the start menu; on the start menu: quit
+--   F11                    : toggle fullscreen
 --
 -- The story below is a hand conversion of One_In_A_Krillion.ink.
 -- Each "knot" has:
@@ -17,18 +21,201 @@
 
 local utf8 = require("utf8")
 
-local W, H          = 1280, 720
-local TEXT_SPEED    = 50       -- characters per second
-local BOX_MARGIN    = 40
-local BOX_HEIGHT    = 220
-local BOX_PADDING   = 24
+-- The game is drawn at 256x128 "game pixels". The window opens at 3x (768x384) and is
+-- resizable: when it is resized, maximised or made fullscreen (F11), everything is
+-- scaled up or down to fit, keeping the 2:1 shape with black bars filling any leftover space.
+local GAME_W, GAME_H  = 256, 128
+local START_SCALE     = 4
+local INTEGER_SCALING = false   -- true = only whole-number scales (crisper pixels, bigger black bars)
+local TEXT_SPEED      = 50      -- characters per second
+
+-- Narration bar (256x26), drawn along the bottom of the screen.
+-- Rectangles below are in game pixels, relative to the bar's top-left corner.
+local BAR_IMAGE   = "assets/UI_Parts/Narration_Bar.png"
+local BAR_TEXT    = { x = 29, y = 4, w = 222, h = 21 }  -- yellow area the story text goes in
+local TEXT_COLOR  = { 0.16, 0.13, 0.08 }               -- dark brown, readable on the yellow
+
+-- Story text and choices use the pixel font (5px letters + 2px line gap), drawn at
+-- TEXT_SCALE in game pixels: 0.5 = half size, so letters are 2.5 game pixels tall.
+local TEXT_SCALE     = 0.5
+local LINE_HEIGHT    = 7                                  -- in font pixels (before TEXT_SCALE)
+local LINE_STEP      = LINE_HEIGHT * TEXT_SCALE           -- in game pixels
+-- Long story lines are split into pages; each click shows the next page.
+local LINES_PER_PAGE = math.floor((BAR_TEXT.h + 2 * TEXT_SCALE) / LINE_STEP)   -- 6 at half size
+local CHOICE_BOX = {
+    w = 216,          -- button width
+    pad_x = 3,        -- space between the button edge and its text
+    pad_y = 2,
+    gap = 2,          -- space between buttons
+    above_bar = 4,    -- space between the last button and the narration bar
+}
+local CHOICE_COLORS = {
+    fill      = { 36 / 255, 42 / 255, 61 / 255, 0.92 },   -- dark navy from the menu art
+    text      = { 187 / 255, 227 / 255, 240 / 255 },      -- pale blue from the menu art
+    hot_fill  = { 255 / 255, 102 / 255, 0 },              -- orange from the menu art
+    hot_text  = { 36 / 255, 42 / 255, 61 / 255 },
+}
+
+-- Ending overlay text, also in the pixel font: the title at 2x (10px letters), hint at 1x.
+local ENDING_TITLE_SCALE = 2
+local ENDING_HINT_SCALE  = 1
+local ENDING_COLORS = {
+    good    = { 0.6, 1, 0.6 },
+    bad     = { 1, 0.45, 0.45 },
+    neutral = { 0.75, 0.85, 1 },
+}
 
 -- Shrimp sprite sheet: 64x64 image = 2x2 grid of 32x32 frames (read left-to-right, top-to-bottom)
-local SHRIMP_SHEET  = "assets/Shrimp_Animations/Shrimp_Anim_Cycle.png"
-local SHRIMP_FRAME  = 32       -- frame size in pixels
-local SHRIMP_FPS    = 6        -- animation speed
-local SHRIMP_SCALE  = 4        -- 32px drawn at 128px on screen
-local SHRIMP_MARGIN = 16       -- gap from the screen's left/bottom edge
+local SHRIMP_SHEET = "assets/Sprites/Shrimp_Animations/Shrimp_Anim_Cycle.png"
+local SHRIMP_FRAME = 32         -- frame size in pixels
+local SHRIMP_FPS   = 6          -- animation speed
+local SHRIMP_SCALE = 0.7        -- half size: the 26x22 px shrimp becomes 13x11
+-- Centre of the blue patch (x 0-22, y 3-25), relative to the bar's top-left.
+local SHRIMP_POS   = { x = 11.5, y = 14.5 }
+-- Middle of the shrimp's drawn pixels inside its 32x32 frame (art spans x 4-29, y 5-26),
+-- used as the pivot so the shrimp itself, not the empty frame, is what gets centred.
+local SHRIMP_PIVOT = { x = 17, y = 16 }
+
+---------------------------------------------------------------------------
+-- Start menu
+---------------------------------------------------------------------------
+local MENU_BACKGROUND = "assets/Backgrounds/Start_Menu_Background.png"
+-- The buttons are painted into the background, so these are their positions in it
+-- (game pixels), from top to bottom.
+local MENU_BUTTONS = {
+    { action = "play",    x = 99, y = 44, w = 53, h = 17 },
+    { action = "endings", x = 99, y = 62, w = 53, h = 17 },
+    { action = "credits", x = 99, y = 80, w = 53, h = 17 },
+    { action = "quit",    x = 99, y = 98, w = 53, h = 17 },
+}
+-- Spinning shrimp: 64x160 sheet = 2 columns x 5 rows of 32x32 frames (10 frames),
+-- read left to right, top to bottom.
+local SPIN_SHEET    = "assets/Sprites/Shrimp_Animations/Shrimp_Rotate_Anim_Cycle.png"
+local SPIN_FRAMES   = 10
+local SPIN_FPS      = 7
+local SPIN_MIRROR_RIGHT = true   -- flip the right-hand shrimp so both face the buttons
+-- Centred halfway between the buttons' edges (x 99 / 151) and the screen edges,
+-- and level with the middle of the button stack (y 44-114).
+local SPIN_LEFT     = { x = 49.5, y = 79.5 }
+local SPIN_RIGHT    = { x = 204,  y = 79.5 }
+
+---------------------------------------------------------------------------
+-- Endings screen
+---------------------------------------------------------------------------
+local ENDINGS_BACKGROUND = "assets/Backgrounds/Endings_Background.png"
+-- Inside of the light-blue box is x 27-227, y 27-99; the painted "ENDINGS" title uses y 30-36.
+-- All positions below are in game pixels.
+local ENDINGS_LAYOUT = {
+    left      = 44,     -- number + ending name start here
+    right     = 220,    -- ending type ("GOOD" etc.) is right-aligned to here
+    count_y   = 40,     -- "X / 7 FOUND" line
+    list_y    = 48,     -- first ending
+    spacing   = 7,      -- 5px tall letters + 2px gap
+}
+-- Text colours chosen to read well on the box's light blue (colours from the art where possible).
+local ENDINGS_COLORS = {
+    text    = { 36 / 255, 42 / 255, 61 / 255 },    -- dark navy
+    locked  = { 72 / 255, 111 / 255, 122 / 255 },  -- the box's dark teal, for "???"
+    count   = { 82 / 255, 48 / 255, 140 / 255 },   -- purple, same as the title
+    good    = { 30 / 255, 110 / 255, 50 / 255 },
+    bad     = { 170 / 255, 40 / 255, 30 / 255 },
+    neutral = { 82 / 255, 48 / 255, 140 / 255 },
+}
+
+---------------------------------------------------------------------------
+-- Pixel font, drawn to match the lettering in the menu art: 5px tall capitals,
+-- mostly 4px wide, with rounded corners. Lowercase text is shown as capitals.
+-- Each glyph is 5 rows of '#' (pixel) and '.' (empty). Add more characters here if needed.
+---------------------------------------------------------------------------
+local PIXEL_GLYPHS = {
+    ["A"] = { ".##.", "#..#", "####", "#..#", "#..#" },
+    ["B"] = { "###.", "#..#", "###.", "#..#", "###." },
+    ["C"] = { ".##.", "#..#", "#...", "#..#", ".##." },
+    ["D"] = { "###.", "#..#", "#..#", "#..#", "###." },
+    ["E"] = { "####", "#...", "###.", "#...", "####" },
+    ["F"] = { "####", "#...", "###.", "#...", "#..." },
+    ["G"] = { ".##.", "#...", "#.##", "#..#", ".##." },
+    ["H"] = { "#..#", "#..#", "####", "#..#", "#..#" },
+    ["I"] = { "###", ".#.", ".#.", ".#.", "###" },
+    ["J"] = { "..##", "...#", "...#", "#..#", ".##." },
+    ["K"] = { "#..#", "#.#.", "##..", "#.#.", "#..#" },
+    ["L"] = { "#...", "#...", "#...", "#...", "####" },
+    ["M"] = { "#...#", "##.##", "#.#.#", "#...#", "#...#" },
+    ["N"] = { "#..#", "##.#", "#.##", "#..#", "#..#" },
+    ["O"] = { ".##.", "#..#", "#..#", "#..#", ".##." },
+    ["P"] = { "###.", "#..#", "###.", "#...", "#..." },
+    ["Q"] = { ".##.", "#..#", "#..#", "#.#.", ".#.#" },
+    ["R"] = { "###.", "#..#", "###.", "#.#.", "#..#" },
+    ["S"] = { ".###", "#...", ".##.", "...#", "###." },
+    ["T"] = { "#####", "..#..", "..#..", "..#..", "..#.." },
+    ["U"] = { "#..#", "#..#", "#..#", "#..#", ".##." },
+    ["V"] = { "#...#", "#...#", "#...#", ".#.#.", "..#.." },
+    ["W"] = { "#...#", "#...#", "#.#.#", "##.##", "#...#" },
+    ["X"] = { "#..#", "#..#", ".##.", "#..#", "#..#" },
+    ["Y"] = { "#...#", ".#.#.", "..#..", "..#..", "..#.." },
+    ["Z"] = { "####", "...#", ".##.", "#...", "####" },
+    ["0"] = { ".##.", "#.##", "#..#", "##.#", ".##." },
+    ["1"] = { ".#.", "##.", ".#.", ".#.", "###" },
+    ["2"] = { "###.", "...#", ".##.", "#...", "####" },
+    ["3"] = { "###.", "...#", ".##.", "...#", "###." },
+    ["4"] = { "#..#", "#..#", "####", "...#", "...#" },
+    ["5"] = { "####", "#...", "###.", "...#", "###." },
+    ["6"] = { ".##.", "#...", "###.", "#..#", ".##." },
+    ["7"] = { "####", "...#", "..#.", ".#..", ".#.." },
+    ["8"] = { ".##.", "#..#", ".##.", "#..#", ".##." },
+    ["9"] = { ".##.", "#..#", ".###", "...#", ".##." },
+    ["."] = { ".", ".", ".", ".", "#" },
+    [","] = { ".", ".", ".", "#", "#" },
+    ["!"] = { "#", "#", "#", ".", "#" },
+    ["?"] = { "###.", "...#", ".##.", "....", ".#.." },
+    ["'"] = { "#", "#", ".", ".", "." },
+    ['"'] = { "#.#", "#.#", "...", "...", "..." },
+    ["-"] = { "...", "...", "###", "...", "..." },
+    ["/"] = { "..#", "..#", ".#.", "#..", "#.." },
+    [":"] = { ".", "#", ".", "#", "." },
+    ["("] = { ".#", "#.", "#.", "#.", ".#" },
+    [")"] = { "#.", ".#", ".#", ".#", "#." },
+    ["&"] = { ".#..", "#.#.", ".#.#", "#.#.", ".#.#" },
+    ["—"] = { "....", "....", "####", "....", "...." },   -- em dash
+    [" "] = { "...", "...", "...", "...", "..." },
+}
+local PIXEL_GLYPH_ORDER = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,!?'\"-/:()&—"
+
+-- Every ending in the story, in the order the Endings screen lists them.
+local ENDINGS_LIST = {
+    { knot = "Saoirse121",  name = "A Shrimple Life" },
+    { knot = "Saoirse1201", name = "..Not Healthy" },
+    { knot = "Jordan111",   name = "One Rich Shrimp" },
+    { knot = "Jordan102",   name = "Dog Food" },
+    { knot = "Jordan1011",  name = "Pleasant Nap" },
+    { knot = "Whale1",      name = "...Well, That Was Fast" },
+    { knot = "Whale2",      name = "Convenient Snack" },
+}
+local SAVE_FILE = "endings.txt"   -- saved in LOVE's save folder, so it survives restarts
+
+-- Credits screen: everything is painted into this image.
+local CREDITS_BACKGROUND = "assets/Backgrounds/Credits_Background.png"
+-- The orange back arrow in the bottom-left corner of the Credits and Endings art
+-- (drawn pixels x 2-22, y 108-125), in game pixels, with a 1px margin so it's easy to click.
+local BACK_ARROW = { x = 1, y = 107, w = 23, h = 20 }
+
+---------------------------------------------------------------------------
+-- Pause (Esc during the story)
+---------------------------------------------------------------------------
+-- Esc freezes the bar's shrimp on its first frame, then zooms into its black eye for
+-- PAUSE_ZOOM_TIME seconds. The pause menu then appears over the black.
+local PAUSE_BACKGROUND = "assets/Backgrounds/Pause_Menu_Background.png"
+local PAUSE_ZOOM_TIME  = 2        -- seconds (also used for zooming back out on resume)
+local PAUSE_MAX_ZOOM   = 400      -- at this zoom the eye's black pixels fill the screen
+-- Centre of the black eye in frame 1 of Shrimp_Anim_Cycle.png (eye pixels x 22-24, y 10-11).
+local SHRIMP_EYE       = { x = 23.5, y = 11 }
+-- "MAIN MENU" (drawn x 107-148, y 40-44) and "SETTINGS" (x 109-148, y 51-55) in the pause
+-- art, with a small margin so they're easy to click.
+local PAUSE_BUTTONS = {
+    { action = "main_menu", x = 104, y = 38, w = 48, h = 9 },
+    { action = "settings",  x = 104, y = 49, w = 48, h = 9 },
+}
+local SETTINGS_COLOR = { 84 / 255, 106 / 255, 145 / 255 }   -- blank settings page (menu blue)
 
 ---------------------------------------------------------------------------
 -- Scenes (swap `image` for a real file path, e.g. "assets/feedstore.png")
@@ -271,14 +458,80 @@ local fonts  = {}
 local images = {}
 local state  = {}
 
--- The text box starts to the right of the shrimp so the two don't overlap.
-local boxX       = SHRIMP_MARGIN * 2 + SHRIMP_FRAME * SHRIMP_SCALE
-local boxY       = H - BOX_HEIGHT - BOX_MARGIN
-local boxW       = W - boxX - BOX_MARGIN
-local shrimp     = { image = nil, quads = {} }
-local textW      = boxW - BOX_PADDING * 2
+local shrimp = { image = nil, quads = {} }
+local bar    = { image = nil, y = 0 }          -- y = bar's top edge in game pixels
+local view   = { scale = START_SCALE, ox = 0, oy = 0 }   -- current scale + letterbox offset
+
+local screen   = "menu"        -- "menu" | "game" | "endings" | "credits"
+local clock    = 0             -- seconds since launch, drives all animations
+local menu     = { background = nil, selected = 1 }
+local spin     = { image = nil, quads = {} }
+-- phase: nil (playing) | "zoom_in" | "menu" | "settings" | "zoom_out";  t = zoom progress in seconds
+local pause    = { phase = nil, t = 0, selected = 1, background = nil }
+local achieved = {}            -- [knotName] = true for endings the player has reached
 
 local gotoKnot -- forward declaration
+
+-- Cut a sprite sheet into frame quads, left to right, then top to bottom.
+local function sliceSheet(image, frame)
+    local quads = {}
+    local sw, sh = image:getDimensions()
+    for row = 0, sh / frame - 1 do
+        for col = 0, sw / frame - 1 do
+            table.insert(quads, love.graphics.newQuad(col * frame, row * frame, frame, frame, sw, sh))
+        end
+    end
+    return quads
+end
+
+-- Turn PIXEL_GLYPHS into a LOVE image font. Image fonts are one strip of glyphs, each
+-- separated by a column of a "spacer" colour (the colour of the very first pixel).
+local function buildPixelFont()
+    local chars = {}                                     -- UTF-8 aware, for the em dash
+    for _, code in utf8.codes(PIXEL_GLYPH_ORDER) do table.insert(chars, utf8.char(code)) end
+
+    local width = 1
+    for _, ch in ipairs(chars) do
+        width = width + #PIXEL_GLYPHS[ch][1] + 1
+    end
+    local data = love.image.newImageData(width, 5)       -- starts fully transparent
+    local function spacer(x)
+        for y = 0, 4 do data:setPixel(x, y, 1, 0, 1, 1) end
+    end
+
+    spacer(0)
+    local x = 1
+    for _, ch in ipairs(chars) do
+        local rows = PIXEL_GLYPHS[ch]
+        for y, row in ipairs(rows) do
+            for cx = 1, #row do
+                if row:sub(cx, cx) == "#" then data:setPixel(x + cx - 1, y - 1, 1, 1, 1, 1) end
+            end
+        end
+        x = x + #rows[1]
+        spacer(x)
+        x = x + 1
+    end
+
+    local font = love.graphics.newImageFont(data, PIXEL_GLYPH_ORDER, 1)   -- 1px between letters
+    font:setFilter("nearest", "nearest")
+    return font
+end
+
+local function loadEndings()
+    if not love.filesystem.getInfo(SAVE_FILE) then return end
+    for name in love.filesystem.lines(SAVE_FILE) do
+        if name ~= "" then achieved[name] = true end
+    end
+end
+
+local function saveEnding(knotName)
+    if achieved[knotName] then return end
+    achieved[knotName] = true
+    local names = {}
+    for name in pairs(achieved) do table.insert(names, name) end
+    love.filesystem.write(SAVE_FILE, table.concat(names, "\n"))
+end
 
 local function getImage(path)
     if not path then return nil end
@@ -288,14 +541,47 @@ local function getImage(path)
     return images[path] or nil
 end
 
--- Wrap the full line once, so words don't jump lines while typing out.
-local function startLine()
-    local text = state.lines[state.lineIndex]
-    local _, wrapped = fonts.body:getWrap(text, textW)
-    state.wrapped = wrapped
+-- Make text safe for the pixel font: capitals only, and drop any character it has no glyph for.
+local function pixelText(text)
+    local out = {}
+    for _, code in utf8.codes(text:upper()) do
+        local ch = utf8.char(code)
+        if PIXEL_GLYPHS[ch] then table.insert(out, ch) end
+    end
+    return table.concat(out)
+end
+
+-- Show one page (up to LINES_PER_PAGE wrapped lines) of the current story line.
+local function showPage(n)
+    state.page = n
+    state.wrapped = state.pages[n]
     state.textLen = 0
-    for _, l in ipairs(wrapped) do state.textLen = state.textLen + utf8.len(l) end
+    for _, l in ipairs(state.wrapped) do state.textLen = state.textLen + utf8.len(l) end
     state.shown = 0
+end
+
+-- Wrap the full line once (so words don't jump while typing out), then split it into pages.
+local function startLine()
+    local text = pixelText(state.lines[state.lineIndex])
+    local _, wrapped = fonts.pixel:getWrap(text, BAR_TEXT.w / TEXT_SCALE)   -- width in font pixels
+    state.pages = {}
+    for i, line in ipairs(wrapped) do
+        local p = math.floor((i - 1) / LINES_PER_PAGE) + 1
+        state.pages[p] = state.pages[p] or {}
+        table.insert(state.pages[p], line)
+    end
+    if #state.pages == 0 then state.pages[1] = {} end
+    showPage(1)
+end
+
+-- Work out the scale and black-bar offsets for a window of size w x h.
+-- (Pixel-font text is laid out in game pixels, so it never needs re-wrapping.)
+local function updateLayout(w, h)
+    local s = math.min(w / GAME_W, h / GAME_H)
+    if INTEGER_SCALING and s >= 1 then s = math.floor(s) end
+    view.scale = s
+    view.ox = math.floor((w - GAME_W * s) / 2)
+    view.oy = math.floor((h - GAME_H * s) / 2)
 end
 
 local function setLines(lines, onFinish)
@@ -331,6 +617,7 @@ local function finishKnot()
     else
         state.ending = knot.ending or "neutral"
         state.mode = "end"
+        saveEnding(state.knotName)
     end
 end
 
@@ -344,6 +631,10 @@ gotoKnot = function(name)
 end
 
 local function nextLine()
+    if state.page < #state.pages then          -- more of this line to show
+        showPage(state.page + 1)
+        return
+    end
     state.lineIndex = state.lineIndex + 1
     if state.lineIndex > #state.lines then
         state.lineIndex = #state.lines       -- keep last line on screen
@@ -375,17 +666,30 @@ local function pickChoice(i)
 end
 
 local function restart()
-    state = { visited = {}, used = {}, choices = {}, selected = 1, time = state.time or 0 }
+    state = { visited = {}, used = {}, choices = {}, selected = 1 }
+    screen = "game"
+    pause.phase, pause.t = nil, 0
     gotoKnot(story.start)
 end
 
+-- Choice buttons in game pixels: each one is as tall as its wrapped text needs,
+-- and they stack upwards from just above the narration bar.
 local function choiceRects()
-    local rects = {}
-    local bw, bh, gap = 820, 54, 14
-    local total = #state.choices * bh + (#state.choices - 1) * gap
-    local y = boxY - 30 - total
-    for i = 1, #state.choices do
-        rects[i] = { x = (W - bw) / 2, y = y + (i - 1) * (bh + gap), w = bw, h = bh }
+    local B = CHOICE_BOX
+    local rects, heights, total = {}, {}, 0
+    for i, c in ipairs(state.choices) do
+        local _, lines = fonts.pixel:getWrap(pixelText(i .. ". " .. c.text),
+            (B.w - B.pad_x * 2) / TEXT_SCALE)
+        local h = (#lines * LINE_HEIGHT - 2) * TEXT_SCALE + B.pad_y * 2
+        rects[i] = { lines = lines }
+        heights[i] = h
+        total = total + h + (i > 1 and B.gap or 0)
+    end
+    local x = math.floor((GAME_W - B.w) / 2)
+    local y = bar.y - B.above_bar - total
+    for i, r in ipairs(rects) do
+        r.x, r.y, r.w, r.h = x, y, B.w, heights[i]
+        y = y + heights[i] + B.gap
     end
     return rects
 end
@@ -394,75 +698,190 @@ local function hit(r, x, y)
     return x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h
 end
 
+-- Convert a window position to game pixels (for clicking on things in the art).
+local function toGame(x, y)
+    return (x - view.ox) / view.scale, (y - view.oy) / view.scale
+end
+
+local function menuButtonAt(x, y)
+    local gx, gy = toGame(x, y)
+    for i, b in ipairs(MENU_BUTTONS) do
+        if hit(b, gx, gy) then return i end
+    end
+end
+
+local function goToMenu()
+    screen = "menu"
+    pause.phase, pause.t = nil, 0
+    love.mouse.setCursor()
+end
+
+local function pauseButtonAt(x, y)
+    local gx, gy = toGame(x, y)
+    for i, b in ipairs(PAUSE_BUTTONS) do
+        if hit(b, gx, gy) then return i end
+    end
+end
+
+local function startPause()
+    pause.phase, pause.t, pause.selected = "zoom_in", 0, 1
+    love.mouse.setCursor()
+end
+
+local function resumeFromPause()
+    pause.phase, pause.t = "zoom_out", PAUSE_ZOOM_TIME   -- plays the zoom backwards
+    love.mouse.setCursor()
+end
+
+local function activatePauseButton(i)
+    local action = PAUSE_BUTTONS[i].action
+    love.mouse.setCursor()
+    if action == "main_menu" then
+        goToMenu()
+    elseif action == "settings" then
+        pause.phase = "settings"
+    end
+end
+
+local function activateMenuButton(i)
+    local action = MENU_BUTTONS[i].action
+    love.mouse.setCursor()
+    if action == "play" then
+        restart()
+    elseif action == "quit" then
+        love.event.quit()
+    else
+        screen = action                            -- "endings" or "credits"
+    end
+end
+
 ---------------------------------------------------------------------------
 -- LOVE callbacks
 ---------------------------------------------------------------------------
 function love.load()
-    love.window.setMode(W, H, { resizable = false, vsync = 1 })
+    love.window.setMode(GAME_W * START_SCALE, GAME_H * START_SCALE,
+        { resizable = true, vsync = 1, minwidth = GAME_W, minheight = GAME_H })
     love.window.setTitle("One In A Krillion")
-    love.graphics.setDefaultFilter("linear", "linear")
+    -- Nearest filtering keeps scaled-up pixel art crisp; fonts set their own smooth filter.
+    love.graphics.setDefaultFilter("nearest", "nearest")
 
-    fonts.body   = love.graphics.newFont(22)
-    fonts.choice = love.graphics.newFont(21)
-    fonts.title  = love.graphics.newFont(48)
-    fonts.small  = love.graphics.newFont(16)
+    -- Narration bar sits on the bottom edge of the game area.
+    bar.image = love.graphics.newImage(BAR_IMAGE)
+    bar.y = GAME_H - bar.image:getHeight()
+    updateLayout(love.graphics.getDimensions())
 
-    -- Slice the sprite sheet into frames (nearest filter keeps pixel art crisp)
+    -- Slice the sprite sheets into frames
     shrimp.image = love.graphics.newImage(SHRIMP_SHEET)
-    shrimp.image:setFilter("nearest", "nearest")
-    local sw, sh = shrimp.image:getDimensions()
-    for row = 0, sh / SHRIMP_FRAME - 1 do
-        for col = 0, sw / SHRIMP_FRAME - 1 do
-            table.insert(shrimp.quads, love.graphics.newQuad(
-                col * SHRIMP_FRAME, row * SHRIMP_FRAME, SHRIMP_FRAME, SHRIMP_FRAME, sw, sh))
-        end
-    end
+    shrimp.quads = sliceSheet(shrimp.image, SHRIMP_FRAME)
+    spin.image   = love.graphics.newImage(SPIN_SHEET)
+    spin.quads   = sliceSheet(spin.image, SHRIMP_FRAME)
+    for i = #spin.quads, SPIN_FRAMES + 1, -1 do spin.quads[i] = nil end   -- ignore unused cells
+    menu.background = love.graphics.newImage(MENU_BACKGROUND)
+    menu.credits    = love.graphics.newImage(CREDITS_BACKGROUND)
+    menu.endings    = love.graphics.newImage(ENDINGS_BACKGROUND)
+    pause.background = love.graphics.newImage(PAUSE_BACKGROUND)
+    fonts.pixel     = buildPixelFont()
 
-    state.time = 0
-    restart()
+    -- Saved endings live in LOVE's save folder (%APPDATA%\LOVE\one_in_a_krillion on Windows)
+    love.filesystem.setIdentity("one_in_a_krillion")
+    loadEndings()
+
+    screen = "menu"
+end
+
+-- Called by LOVE whenever the window is resized or maximised.
+function love.resize(w, h)
+    updateLayout(w, h)
 end
 
 function love.update(dt)
-    state.time = state.time + dt
-    if state.mode == "text" and not lineComplete() then
+    clock = clock + dt
+
+    -- pause zoom animation
+    if pause.phase == "zoom_in" then
+        pause.t = math.min(PAUSE_ZOOM_TIME, pause.t + dt)
+        if pause.t >= PAUSE_ZOOM_TIME then pause.phase = "menu" end
+    elseif pause.phase == "zoom_out" then
+        pause.t = math.max(0, pause.t - dt)
+        if pause.t <= 0 then pause.phase = nil end
+    end
+
+    -- typewriter (frozen while paused)
+    if screen == "game" and not pause.phase and state.mode == "text" and not lineComplete() then
         state.shown = math.min(state.textLen, state.shown + TEXT_SPEED * dt)
     end
 end
 
-local function drawBackground()
-    local scene = SCENES[state.knot.scene] or SCENES.feedstore
-    local img = getImage(scene.image)
-    if img then
-        local s = math.max(W / img:getWidth(), H / img:getHeight())
-        love.graphics.setColor(1, 1, 1)
-        love.graphics.draw(img, W / 2, H / 2, 0, s, s, img:getWidth() / 2, img:getHeight() / 2)
-    else
-        -- flat, static colour for the scene
-        love.graphics.setColor(scene.color)
-        love.graphics.rectangle("fill", 0, 0, W, H)
+-- Where the bar shrimp's black eye is on screen, in game pixels.
+local function eyePosition()
+    return SHRIMP_POS.x + (SHRIMP_EYE.x - SHRIMP_PIVOT.x) * SHRIMP_SCALE,
+           bar.y + SHRIMP_POS.y + (SHRIMP_EYE.y - SHRIMP_PIVOT.y) * SHRIMP_SCALE
+end
+
+local function isZooming()
+    return pause.phase == "zoom_in" or pause.phase == "zoom_out"
+end
+
+-- Move into game-pixel space: everything drawn after this is in 256x128 coordinates.
+-- While pausing, this also applies the zoom: the eye glides to the centre of the screen
+-- as the zoom grows from 1x to PAUSE_MAX_ZOOM (smoothly eased, exponential so it feels even).
+local function pushGameSpace()
+    love.graphics.push()
+    love.graphics.translate(view.ox, view.oy)
+    love.graphics.scale(view.scale)
+    if isZooming() then
+        local p = pause.t / PAUSE_ZOOM_TIME
+        local e = p * p * (3 - 2 * p)                     -- smoothstep ease in/out
+        local z = PAUSE_MAX_ZOOM ^ e
+        local ex, ey = eyePosition()
+        love.graphics.translate(ex + (GAME_W / 2 - ex) * e, ey + (GAME_H / 2 - ey) * e)
+        love.graphics.scale(z)
+        love.graphics.translate(-ex, -ey)
     end
 end
 
--- Animated 32px shrimp, fixed in the bottom-left corner of the screen.
-local function drawShrimp()
-    local frame = math.floor(state.time * SHRIMP_FPS) % #shrimp.quads + 1
-    local size  = SHRIMP_FRAME * SHRIMP_SCALE
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.draw(shrimp.image, shrimp.quads[frame],
-        SHRIMP_MARGIN, H - SHRIMP_MARGIN - size, 0, SHRIMP_SCALE, SHRIMP_SCALE)
+local function drawPixelArt()
+    pushGameSpace()
+
+    -- background: scene image if it has one, otherwise a flat colour
+    local scene = SCENES[state.knot.scene] or SCENES.feedstore
+    local img = getImage(scene.image)
+    if img then
+        local s = math.max(GAME_W / img:getWidth(), GAME_H / img:getHeight())
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.draw(img, GAME_W / 2, GAME_H / 2, 0, s, s, img:getWidth() / 2, img:getHeight() / 2)
+    else
+        love.graphics.setColor(scene.color)
+        love.graphics.rectangle("fill", 0, 0, GAME_W, GAME_H)
+    end
+
+    love.graphics.pop()
 end
 
-local function drawTextBox()
-    love.graphics.setColor(0, 0, 0, 0.72)
-    love.graphics.rectangle("fill", boxX, boxY, boxW, BOX_HEIGHT, 14, 14)
-    love.graphics.setColor(1, 1, 1, 0.35)
-    love.graphics.rectangle("line", boxX, boxY, boxW, BOX_HEIGHT, 14, 14)
+-- Narration bar along the bottom, with the animated shrimp in its blue patch.
+local function drawBar()
+    pushGameSpace()
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(bar.image, 0, bar.y)
+    local frame = math.floor(clock * SHRIMP_FPS) % #shrimp.quads + 1
+    if pause.phase then frame = 1 end              -- frozen on its first frame while paused
+    love.graphics.draw(shrimp.image, shrimp.quads[frame],
+        SHRIMP_POS.x, bar.y + SHRIMP_POS.y, 0,
+        SHRIMP_SCALE, SHRIMP_SCALE, SHRIMP_PIVOT.x, SHRIMP_PIVOT.y)
+    love.graphics.pop()
+end
+
+-- Story text, drawn in game pixels with the pixel font inside the bar's yellow area.
+local function drawText()
+    pushGameSpace()
+    love.graphics.setFont(fonts.pixel)
+    love.graphics.setColor(TEXT_COLOR)
 
     -- typewriter: print wrapped lines up to `shown` characters
-    love.graphics.setFont(fonts.body)
-    love.graphics.setColor(1, 1, 1)
     local remaining = math.floor(state.shown)
-    local lh = fonts.body:getHeight() * 1.15
+    local block = (#state.wrapped * LINE_HEIGHT - 2) * TEXT_SCALE
+    local x  = BAR_TEXT.x
+    local y0 = bar.y + BAR_TEXT.y + math.floor((BAR_TEXT.h - block) / 2 / TEXT_SCALE) * TEXT_SCALE
     for i, line in ipairs(state.wrapped) do
         if remaining <= 0 then break end
         local len = utf8.len(line)
@@ -470,75 +889,259 @@ local function drawTextBox()
         if remaining < len then
             visible = line:sub(1, utf8.offset(line, remaining + 1) - 1)
         end
-        love.graphics.print(visible, boxX + BOX_PADDING, boxY + BOX_PADDING + (i - 1) * lh)
+        love.graphics.print(visible, x, y0 + (i - 1) * LINE_STEP, 0, TEXT_SCALE, TEXT_SCALE)
         remaining = remaining - len
     end
 
-    -- "continue" indicator
-    if state.mode == "text" and lineComplete() and math.floor(state.time * 2) % 2 == 0 then
-        local x, y = boxX + boxW - 34, boxY + BOX_HEIGHT - 28
-        love.graphics.polygon("fill", x, y, x + 16, y, x + 8, y + 10)
+    -- blinking "continue" arrow in the bar's bottom-right corner
+    if state.mode == "text" and lineComplete() and math.floor(clock * 2) % 2 == 0 then
+        local ax = BAR_TEXT.x + BAR_TEXT.w - 5
+        local ay = bar.y + BAR_TEXT.y + BAR_TEXT.h - 3
+        love.graphics.polygon("fill", ax, ay, ax + 5, ay, ax + 2.5, ay + 2.5)
     end
+    love.graphics.pop()
 end
 
 local function drawChoices()
-    local mx, my = love.mouse.getPosition()
-    love.graphics.setFont(fonts.choice)
+    pushGameSpace()
+    love.graphics.setFont(fonts.pixel)
+    local C = CHOICE_COLORS
     for i, r in ipairs(choiceRects()) do
         local hot = (i == state.selected)
-        love.graphics.setColor(hot and 0.95 or 0.10, hot and 0.55 or 0.10, hot and 0.48 or 0.14, 0.92)
-        love.graphics.rectangle("fill", r.x, r.y, r.w, r.h, 10, 10)
-        love.graphics.setColor(1, 1, 1, hot and 1 or 0.4)
-        love.graphics.rectangle("line", r.x, r.y, r.w, r.h, 10, 10)
-        love.graphics.setColor(1, 1, 1)
-        love.graphics.printf(i .. ".  " .. state.choices[i].text, r.x + 16,
-            r.y + (r.h - fonts.choice:getHeight()) / 2, r.w - 32, "center")
+        love.graphics.setColor(hot and C.hot_fill or C.fill)
+        love.graphics.rectangle("fill", r.x, r.y, r.w, r.h)
+        love.graphics.setColor(hot and C.hot_text or C.text)
+        for li, line in ipairs(r.lines) do
+            love.graphics.printf(line, r.x + CHOICE_BOX.pad_x,
+                r.y + CHOICE_BOX.pad_y + (li - 1) * LINE_STEP,
+                (r.w - CHOICE_BOX.pad_x * 2) / TEXT_SCALE, "center", 0, TEXT_SCALE, TEXT_SCALE)
+        end
     end
+    love.graphics.pop()
 end
 
+-- Ending overlay over the area above the narration bar, in game pixels with the pixel font.
 local function drawEnding()
+    pushGameSpace()
+    local top = bar.y
     love.graphics.setColor(0, 0, 0, 0.55)
-    love.graphics.rectangle("fill", 0, 0, W, boxY - 10)
-    love.graphics.setFont(fonts.title)
-    local col = ({ good = {0.6, 1, 0.6}, bad = {1, 0.45, 0.45}, neutral = {0.75, 0.85, 1} })[state.ending]
-    love.graphics.setColor(col)
-    love.graphics.printf(ENDING_TITLES[state.ending], 0, boxY / 2 - 60, W, "center")
-    love.graphics.setFont(fonts.small)
+    love.graphics.rectangle("fill", 0, 0, GAME_W, top)
+    love.graphics.setFont(fonts.pixel)
+
+    local ts, hs = ENDING_TITLE_SCALE, ENDING_HINT_SCALE
+    local titleY = math.floor(top / 2) - 5 * ts - 2
+    love.graphics.setColor(ENDING_COLORS[state.ending])
+    love.graphics.printf(ENDING_TITLES[state.ending], 0, titleY, GAME_W / ts, "center", 0, ts, ts)
+
     love.graphics.setColor(1, 1, 1, 0.8)
-    love.graphics.printf("Click or press R to play again", 0, boxY / 2 + 10, W, "center")
+    love.graphics.printf("CLICK TO RETURN TO THE MENU - R TO PLAY AGAIN", 0, math.floor(top / 2) + 3,
+        GAME_W / hs, "center", 0, hs, hs)
+    love.graphics.pop()
+end
+
+---------------------------------------------------------------------------
+-- Start menu, Endings and Credits screens
+---------------------------------------------------------------------------
+local function drawSpinShrimp(pos, mirror)
+    local frame = math.floor(clock * SPIN_FPS) % #spin.quads + 1
+    local sx = mirror and -1 or 1
+    love.graphics.draw(spin.image, spin.quads[frame], pos.x, pos.y, 0, sx, 1,
+        SHRIMP_PIVOT.x, SHRIMP_PIVOT.y)
+end
+
+local function drawMenu()
+    pushGameSpace()
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(menu.background, 0, 0)
+
+    love.graphics.setColor(1, 1, 1)
+    drawSpinShrimp(SPIN_LEFT, false)
+    drawSpinShrimp(SPIN_RIGHT, SPIN_MIRROR_RIGHT)
+    love.graphics.pop()
+end
+
+-- Drawn in game pixels with the pixel font, so the text scales exactly like the art.
+local function drawEndingsList()
+    pushGameSpace()
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(menu.endings, 0, 0)
+
+    local L, C = ENDINGS_LAYOUT, ENDINGS_COLORS
+    love.graphics.setFont(fonts.pixel)
+
+    local found = 0
+    for _, e in ipairs(ENDINGS_LIST) do
+        if achieved[e.knot] then found = found + 1 end
+    end
+    love.graphics.setColor(C.count)
+    love.graphics.printf(found .. " / " .. #ENDINGS_LIST .. " FOUND", L.left, L.count_y,
+        L.right - L.left, "center")
+
+    for i, e in ipairs(ENDINGS_LIST) do
+        local y = L.list_y + (i - 1) * L.spacing
+        if achieved[e.knot] then
+            local kind = story.knots[e.knot].ending
+            love.graphics.setColor(C.text)
+            love.graphics.print((i .. ". " .. e.name):upper(), L.left, y)
+            love.graphics.setColor(C[kind])
+            love.graphics.printf(kind:upper(), L.left, y, L.right - L.left, "right")
+        else
+            love.graphics.setColor(C.locked)
+            love.graphics.print(i .. ". ???", L.left, y)
+        end
+    end
+    love.graphics.pop()
+end
+
+local function drawCredits()
+    pushGameSpace()
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(menu.credits, 0, 0)
+    love.graphics.pop()
+end
+
+local function overBackArrow(x, y)
+    local gx, gy = toGame(x, y)
+    return hit(BACK_ARROW, gx, gy)
+end
+
+-- Pause menu art over the black (its transparent areas let the black show through).
+local function drawPauseMenu()
+    pushGameSpace()
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(pause.background, 0, 0)
+    love.graphics.pop()
+end
+
+-- Settings: blank for now.
+local function drawSettings()
+    pushGameSpace()
+    love.graphics.setColor(SETTINGS_COLOR)
+    love.graphics.rectangle("fill", 0, 0, GAME_W, GAME_H)
+    love.graphics.pop()
+end
+
+local function drawStory()
+    drawPixelArt()
+    if state.mode == "choice" then drawChoices() end
+    if state.mode == "end" then drawEnding() end
+    drawBar()
+    drawText()
 end
 
 function love.draw()
-    drawBackground()
-    drawTextBox()
-    if state.mode == "choice" then drawChoices() end
-    if state.mode == "end" then drawEnding() end
-    drawShrimp()
+    love.graphics.clear(0, 0, 0)                   -- black bars around the game area
+    if screen == "menu" then
+        drawMenu()
+    elseif screen == "endings" then
+        drawEndingsList()
+    elseif screen == "credits" then
+        drawCredits()
+    elseif pause.phase == "menu" then
+        drawPauseMenu()
+    elseif pause.phase == "settings" then
+        drawSettings()
+    elseif isZooming() then
+        -- keep the zoomed picture inside the game area, not over the black side bars
+        local s = view.scale
+        love.graphics.setScissor(view.ox, view.oy, math.ceil(GAME_W * s), math.ceil(GAME_H * s))
+        drawStory()
+        love.graphics.setScissor()
+    else
+        drawStory()
+    end
 end
 
 function love.mousemoved(x, y)
-    if state.mode == "choice" then
+    if screen == "menu" then
+        local i = menuButtonAt(x, y)
+        if i then menu.selected = i end
+        love.mouse.setCursor(i and love.mouse.getSystemCursor("hand") or nil)
+    elseif screen == "credits" or screen == "endings" then
+        love.mouse.setCursor(overBackArrow(x, y) and love.mouse.getSystemCursor("hand") or nil)
+    elseif screen == "game" and pause.phase then
+        if pause.phase == "menu" then
+            local i = pauseButtonAt(x, y)
+            if i then pause.selected = i end
+            love.mouse.setCursor(i and love.mouse.getSystemCursor("hand") or nil)
+        end
+    elseif screen == "game" and state.mode == "choice" then
+        local gx, gy = toGame(x, y)
         for i, r in ipairs(choiceRects()) do
-            if hit(r, x, y) then state.selected = i end
+            if hit(r, gx, gy) then state.selected = i end
         end
     end
 end
 
 function love.mousepressed(x, y, button)
     if button ~= 1 then return end
-    if state.mode == "text" then
+    if screen == "menu" then
+        local i = menuButtonAt(x, y)
+        if i then activateMenuButton(i) end
+    elseif screen == "credits" or screen == "endings" then
+        if overBackArrow(x, y) then goToMenu() end     -- only the arrow goes back
+    elseif pause.phase then
+        if pause.phase == "menu" then                  -- clicks do nothing while zooming
+            local i = pauseButtonAt(x, y)
+            if i then activatePauseButton(i) end
+        end
+    elseif state.mode == "text" then
         advance()
     elseif state.mode == "choice" then
+        local gx, gy = toGame(x, y)
         for i, r in ipairs(choiceRects()) do
-            if hit(r, x, y) then pickChoice(i) return end
+            if hit(r, gx, gy) then pickChoice(i) return end
         end
     elseif state.mode == "end" then
-        restart()
+        goToMenu()
     end
 end
 
 function love.keypressed(key)
-    if key == "escape" then love.event.quit() return end
+    if key == "f11" then
+        love.window.setFullscreen(not love.window.getFullscreen(), "desktop")
+        updateLayout(love.graphics.getDimensions())
+        return
+    end
+    local confirm = (key == "space" or key == "return" or key == "kpenter")
+
+    if screen == "menu" then
+        local n = #MENU_BUTTONS
+        if key == "escape" then
+            love.event.quit()
+        elseif key == "up" then
+            menu.selected = (menu.selected - 2) % n + 1
+        elseif key == "down" then
+            menu.selected = menu.selected % n + 1
+        elseif confirm then
+            activateMenuButton(menu.selected)
+        end
+        return
+    end
+    if screen == "endings" or screen == "credits" then
+        if key == "escape" or confirm then goToMenu() end   -- keyboard shortcut for the arrow
+        return
+    end
+    -- From here on we're in the story. Esc pauses / resumes / backs out of Settings.
+    if pause.phase == "menu" then
+        local n = #PAUSE_BUTTONS
+        if key == "escape" then
+            resumeFromPause()
+        elseif key == "up" then
+            pause.selected = (pause.selected - 2) % n + 1
+        elseif key == "down" then
+            pause.selected = pause.selected % n + 1
+        elseif confirm then
+            activatePauseButton(pause.selected)
+        end
+        return
+    elseif pause.phase == "settings" then
+        if key == "escape" then pause.phase = "menu" end
+        return
+    elseif pause.phase then
+        return                                     -- ignore keys mid-zoom
+    end
+    if key == "escape" then startPause() return end
 
     if state.mode == "text" then
         if key == "space" or key == "return" or key == "kpenter" then advance() end
@@ -555,6 +1158,6 @@ function love.keypressed(key)
             if num and num >= 1 and num <= n then pickChoice(num) end
         end
     elseif state.mode == "end" then
-        if key == "r" or key == "return" or key == "space" then restart() end
+        if key == "r" then restart() elseif confirm then goToMenu() end
     end
 end
