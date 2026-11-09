@@ -1,4 +1,4 @@
--- One In A Krillion : a small visual novel engine for LOVE2D (11.x / 12.x)
+-- One In A Krillion : a small visual novel game for LOVE2D engine (11.x / 12.x)
 --
 -- Controls
 --   Click / Space / Enter : advance text (first press finishes the typewriter)
@@ -34,10 +34,10 @@ local SHRIMP_MARGIN = 16       -- gap from the screen's left/bottom edge
 -- Scenes (swap `image` for a real file path, e.g. "assets/feedstore.png")
 ---------------------------------------------------------------------------
 local SCENES = {
-    feedstore = { top = {0.20, 0.45, 0.50}, bottom = {0.08, 0.20, 0.25}, image = nil },
-    saoirse   = { top = {0.55, 0.38, 0.55}, bottom = {0.22, 0.14, 0.26}, image = nil },
-    jordan    = { top = {0.40, 0.44, 0.52}, bottom = {0.14, 0.15, 0.20}, image = nil },
-    ocean     = { top = {0.08, 0.30, 0.55}, bottom = {0.01, 0.05, 0.15}, image = nil },
+    feedstore = { color = {0.14, 0.32, 0.37}, image = nil },
+    saoirse   = { color = {0.38, 0.26, 0.40}, image = nil },
+    jordan    = { color = {0.27, 0.29, 0.36}, image = nil },
+    ocean     = { color = {0.05, 0.17, 0.35}, image = nil },
 }
 
 ---------------------------------------------------------------------------
@@ -270,7 +270,6 @@ local ENDING_TITLES = {
 local fonts  = {}
 local images = {}
 local state  = {}
-local bubbles = {}
 
 -- The text box starts to the right of the shrimp so the two don't overlap.
 local boxX       = SHRIMP_MARGIN * 2 + SHRIMP_FRAME * SHRIMP_SCALE
@@ -419,11 +418,6 @@ function love.load()
         end
     end
 
-    for i = 1, 25 do
-        bubbles[i] = { x = love.math.random(0, W), y = love.math.random(0, H),
-                       r = love.math.random(2, 7), s = love.math.random(20, 60) }
-    end
-
     state.time = 0
     restart()
 end
@@ -432,10 +426,6 @@ function love.update(dt)
     state.time = state.time + dt
     if state.mode == "text" and not lineComplete() then
         state.shown = math.min(state.textLen, state.shown + TEXT_SPEED * dt)
-    end
-    for _, b in ipairs(bubbles) do
-        b.y = b.y - b.s * dt
-        if b.y < -10 then b.y, b.x = H + 10, love.math.random(0, W) end
     end
 end
 
@@ -447,20 +437,9 @@ local function drawBackground()
         love.graphics.setColor(1, 1, 1)
         love.graphics.draw(img, W / 2, H / 2, 0, s, s, img:getWidth() / 2, img:getHeight() / 2)
     else
-        -- simple vertical gradient made of bands
-        local bands = 48
-        for i = 0, bands - 1 do
-            local t = i / (bands - 1)
-            love.graphics.setColor(
-                scene.top[1] + (scene.bottom[1] - scene.top[1]) * t,
-                scene.top[2] + (scene.bottom[2] - scene.top[2]) * t,
-                scene.top[3] + (scene.bottom[3] - scene.top[3]) * t)
-            love.graphics.rectangle("fill", 0, i * H / bands, W, H / bands + 1)
-        end
-    end
-    love.graphics.setColor(1, 1, 1, 0.18)
-    for _, b in ipairs(bubbles) do
-        love.graphics.circle("line", b.x + math.sin(state.time * 2 + b.y * 0.02) * 4, b.y, b.r)
+        -- flat, static colour for the scene
+        love.graphics.setColor(scene.color)
+        love.graphics.rectangle("fill", 0, 0, W, H)
     end
 end
 
